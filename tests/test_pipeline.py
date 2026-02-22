@@ -79,13 +79,13 @@ class TestEventGenerator:
 class TestSNNProcessor:
 
     def test_output_shapes(self, generator, processor, dummy_frame):
-        """Spike and membrane tensors should match [1, 2, H, W]."""
+        """Spike and membrane tensors should be [1, num_features, H, W] = [1, 8, 64, 64]."""
         generator.process_frame(dummy_frame)
         on, off = generator.process_frame(np.zeros_like(dummy_frame))
         event_tensor = generator.convert_to_tensor(on, off)
         spk, mem = processor.process(event_tensor)
-        assert spk.shape == (1, 2, 64, 64)
-        assert mem.shape == (1, 2, 64, 64)
+        assert spk.shape == (1, 8, 64, 64), f"Unexpected spike shape: {spk.shape}"
+        assert mem.shape == (1, 8, 64, 64), f"Unexpected mem shape: {mem.shape}"
 
     def test_spikes_are_binary(self, generator, processor, dummy_frame):
         """The spike tensor should only contain 0.0 or 1.0 values."""

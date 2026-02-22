@@ -2,7 +2,7 @@ import cv2
 import argparse
 from generator import EventGenerator
 from processor import SNNProcessor
-from utils import visualize_events
+from utils import visualize_events, visualize_feature_maps
 
 
 def main():
@@ -58,11 +58,11 @@ def main():
 
             # 4. Visualization
             event_vis = visualize_events(on_spikes, off_spikes)
-            mem_vis = mem[0, 0].detach().numpy()  # Take ON-channel potential
+            feat_vis = visualize_feature_maps(mem)  # tiled 2×4 grid of 8 edge detectors
 
             cv2.imshow('Original Stream', frame)
             cv2.imshow('Event-Based (DVS) Spikes', event_vis)
-            cv2.imshow('SNN Membrane Potential (Memory)', mem_vis)
+            cv2.imshow('SNN Feature Maps (8 Edge Detectors)', feat_vis)
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
