@@ -66,17 +66,35 @@ def main():
             event_vis = visualize_events(on_spikes, off_spikes)
             feat_vis = visualize_feature_maps(mem)  # tiled 2×4 grid of 8 edge detectors
 
-            cv2.imshow('Original Stream', frame)
+            # Spike sparsity — fraction of neurons that did NOT fire this step.
+            # Core argument for neuromorphic computing: SNNs are ~95–99% sparse
+            # vs dense activation in CNNs, which translates directly to energy savings.
+            sparsity = 1.0 - spk.mean().item()
+
+            # Overlay sparsity on the original frame so it's visible in the demo
+            frame_display = frame.copy()
+            cv2.putText(
+                frame_display,
+                f"Sparsity: {sparsity:.1%}",
+                org=(10, 28),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.8,
+                color=(0, 255, 0),   # green text
+                thickness=2,
+            )
+
+            cv2.imshow('Original Stream', frame_display)
             cv2.imshow('Event-Based (DVS) Spikes', event_vis)
             cv2.imshow('SNN Feature Maps (8 Edge Detectors)', feat_vis)
 
             # 5. STDP weight update — kernels learn from spike correlations
             stdp.update(event_tensor, spk)
 
-            # Log weight norm every 30 frames so we can see learning happening
+            # Log weight norm + sparsity every 30 frames
             frame_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
             if frame_idx % 30 == 0:
-                print(f"[Frame {frame_idx:5d}] Weight norm: {stdp.weight_norm():.4f}")
+                print(f"[Frame {frame_idx:5d}] Weight norm: {stdp.weight_norm():.4f} | Sparsity: {sparsity:.1%}")
+
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
