@@ -11,9 +11,10 @@ Instead of capturing full frames at a fixed frame rate (like a regular camera), 
 ## What Does This Project Do?
 
 1. **Reads frames** from your webcam (or a video file)
-2. **Detects pixel changes** between frames — if a pixel got brighter, it fires an **ON event**; if it got darker, it fires an **OFF event**
+2. **Detects pixel changes** between frames using **log-luminance** — the physically correct way a real DVS camera works
 3. **Passes those events** through a Convolutional Spiking Neural Network — first a Conv2D layer finds edges and shapes, then LIF neurons decide if they're strong enough to "fire"
-4. **Shows you** three live windows: the original feed, the detected events, and the 8 feature maps from the convolutional layer
+4. **Updates its own kernels** in real-time using **STDP** — a biologically-inspired learning rule
+5. **Shows you** three live windows: the original feed, the detected events, and the 8 feature maps from the convolutional layer
 
 ---
 
@@ -24,6 +25,10 @@ Instead of capturing full frames at a fixed frame rate (like a regular camera), 
 **ON / OFF Events** — Think of them as pixels raising their hand when something moves. Green = got brighter, Red = got darker.
 
 **Leaky Integrate-and-Fire (LIF) Neuron** — Each pixel has a "charge bucket" that fills up when events arrive and slowly drains over time. When it overflows, the neuron "fires". It's the simplest model of a biological neuron.
+
+**Log-Luminance** — Real DVS cameras don't measure raw brightness, they measure *changes in log-brightness*. This is how the eye works too — you notice when a light gets 2× brighter, not when it gets 10 units brighter. Mathematically: `ΔL = log(I_t) - log(I_{t-1})`.
+
+**STDP (Spike-Timing Dependent Plasticity)** — The brain's learning rule: if neuron A fires just before neuron B, their connection gets stronger. If B fires before A, the connection weakens. In short: *neurons that fire together, wire together.*
 
 ---
 
@@ -36,15 +41,23 @@ Input Spikes [B, 2, H, W]        ← 2 channels: ON and OFF
     │
     ▼
 Conv2D  (8 kernels, 3×3)         ← 8 different edge detectors scanning the spike map
-    │                               (learns horizontal lines, vertical lines, diagonals, etc.)
+    │                               (horizontal lines, vertical lines, diagonals, etc.)
     ▼
 LIF Neurons  (one per feature pixel) ← fires when a detected edge is strong enough
     │
     ▼
 Output Feature Maps [B, 8, H, W] ← 8 maps showing WHERE each type of edge is active
+    │
+    ▼
+STDP Update                      ← adjusts the Conv2D weights after every frame
+                                   neurons that responded together get a stronger link
 ```
 
-**Why this matters:** The old version just tracked per-pixel brightness changes. The new Conv-SNN can recognise *shapes* — it understands that several spiking pixels together form a line or a corner, not just isolated noise.
+**Why Conv2D?** The old version just tracked per-pixel brightness changes. With convolution, the network checks small *patches* of pixels together — it can recognise that several spiking pixels form a line or corner, not just isolated noise.
+
+**Why STDP?** The Conv kernels start random. With STDP, they gradually tune themselves to the patterns that appear most often in the video — no labels, no training loop, just natural Hebbian learning. You can watch this happening: the console prints a weight norm every 30 frames that slowly changes as the kernels self-organise.
+
+**Why Log-Luminance?** Real DVS cameras fire based on *proportional* brightness changes, not absolute ones. `log(I_t) - log(I_{t-1})` captures this correctly — a candle in a dark room and a floodlight in daylight both trigger the same size event if they double in brightness.
 
 ---
 
@@ -53,12 +66,14 @@ Output Feature Maps [B, 8, H, W] ← 8 maps showing WHERE each type of edge is a
 ```
 EventVision-SNN/
 ├── src/
-│   ├── generator.py   # Converts webcam frames into ON/OFF spike maps
+│   ├── generator.py   # Converts webcam frames into ON/OFF spike maps (log-luminance)
 │   ├── processor.py   # Conv2D + LIF layer — detects edges and fires feature spikes
+│   ├── stdp.py        # STDPLearner — updates Conv2D weights from spike correlations
 │   ├── utils.py       # Helpers: spike visualization & feature map tiling
 │   └── main.py        # Entry point — ties everything together
 ├── tests/
-│   └── test_pipeline.py  # Automated tests (no camera needed)
+│   ├── test_pipeline.py  # Automated tests for the DVS + SNN pipeline
+│   └── test_stdp.py      # Automated tests for the STDP learning rule
 ├── data/              # Put video files here (ignored by git)
 └── requirements.txt
 ```
