@@ -32,6 +32,8 @@ Instead of capturing full frames at a fixed frame rate (like a regular camera), 
 
 **Spike Sparsity** — At any given moment, only ~1–5% of neurons fire. This is the core energy efficiency argument for neuromorphic computing: hardware like Intel Loihi only consumes power for neurons that actually fire, so 99% sparsity means ~99% less work than a conventional dense neural network.
 
+**Gabor Filter** — A tiny image patch that looks like a striped pattern (think a small piece of barcode) at a specific angle. It's the standard mathematical model of how V1 simple cells in your brain detect edges. Instead of starting with random conv kernels, we initialise all 8 with Gabor filters at different orientations (0°, 22.5°, 45° ... 157.5°) so the network is immediately useful from the very first frame.
+
 ---
 
 ## SNN Architecture — V1 Cortex Model
@@ -57,7 +59,9 @@ STDP Update                      ← adjusts the Conv2D weights after every fram
 
 **Why Conv2D?** The old version just tracked per-pixel brightness changes. With convolution, the network checks small *patches* of pixels together — it can recognise that several spiking pixels form a line or corner, not just isolated noise.
 
-**Why STDP?** The Conv kernels start random. With STDP, they gradually tune themselves to the patterns that appear most often in the video — no labels, no training loop, just natural Hebbian learning. You can watch this happening: the console prints a weight norm every 30 frames that slowly changes as the kernels self-organise.
+**Why Gabor init?** Random kernel weights detect nothing meaningful at the start. Gabor filters give each of the 8 kernels a specific job from frame 1 (e.g. kernel 0 = horizontal edges, kernel 2 = vertical edges). STDP then fine-tunes them based on what actually appears in the video.
+
+**Why STDP?** The Conv kernels start as Gabor filters. With STDP, they gradually tune themselves to the patterns that appear most often in the video — no labels, no training loop, just natural Hebbian learning. You can watch this happening: the console prints a weight norm every 30 frames that slowly changes as the kernels self-organise.
 
 **Why Log-Luminance?** Real DVS cameras fire based on *proportional* brightness changes, not absolute ones. `log(I_t) - log(I_{t-1})` captures this correctly — a candle in a dark room and a floodlight in daylight both trigger the same size event if they double in brightness.
 
