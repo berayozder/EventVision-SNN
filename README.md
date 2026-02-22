@@ -4,6 +4,8 @@ A project that makes a normal webcam behave like a **Dynamic Vision Sensor (DVS)
 
 Instead of capturing full frames at a fixed frame rate (like a regular camera), a DVS only records **which pixels changed** and **in which direction** (brighter or darker). This makes it much faster and more data-efficient.
 
+![Demo — DVS emulator running on a video file](demo.gif)
+
 ---
 
 ## What Does This Project Do?
