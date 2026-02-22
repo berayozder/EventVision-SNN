@@ -12,8 +12,8 @@ Instead of capturing full frames at a fixed frame rate (like a regular camera), 
 
 1. **Reads frames** from your webcam (or a video file)
 2. **Detects pixel changes** between frames — if a pixel got brighter, it fires an **ON event**; if it got darker, it fires an **OFF event**
-3. **Passes those events** through a simple Spiking Neural Network (SNN), which mimics how biological neurons process information over time
-4. **Shows you** three live windows: the original feed, the detected events, and the neuron activity
+3. **Passes those events** through a Convolutional Spiking Neural Network — first a Conv2D layer finds edges and shapes, then LIF neurons decide if they're strong enough to "fire"
+4. **Shows you** three live windows: the original feed, the detected events, and the 8 feature maps from the convolutional layer
 
 ---
 
@@ -27,14 +27,35 @@ Instead of capturing full frames at a fixed frame rate (like a regular camera), 
 
 ---
 
+## SNN Architecture — V1 Cortex Model
+
+The network is inspired by the **V1 visual cortex** — the first layer of the brain that processes raw visual input into edges and shapes.
+
+```
+Input Spikes [B, 2, H, W]        ← 2 channels: ON and OFF
+    │
+    ▼
+Conv2D  (8 kernels, 3×3)         ← 8 different edge detectors scanning the spike map
+    │                               (learns horizontal lines, vertical lines, diagonals, etc.)
+    ▼
+LIF Neurons  (one per feature pixel) ← fires when a detected edge is strong enough
+    │
+    ▼
+Output Feature Maps [B, 8, H, W] ← 8 maps showing WHERE each type of edge is active
+```
+
+**Why this matters:** The old version just tracked per-pixel brightness changes. The new Conv-SNN can recognise *shapes* — it understands that several spiking pixels together form a line or a corner, not just isolated noise.
+
+---
+
 ## Project Structure
 
 ```
 EventVision-SNN/
 ├── src/
 │   ├── generator.py   # Converts webcam frames into ON/OFF spike maps
-│   ├── processor.py   # Runs those spikes through LIF neurons (snnTorch)
-│   ├── utils.py       # Helper: makes a colored image of the spikes
+│   ├── processor.py   # Conv2D + LIF layer — detects edges and fires feature spikes
+│   ├── utils.py       # Helpers: spike visualization & feature map tiling
 │   └── main.py        # Entry point — ties everything together
 ├── tests/
 │   └── test_pipeline.py  # Automated tests (no camera needed)
@@ -69,7 +90,7 @@ python src/main.py --source data/test_vid1.mp4
 Three windows will open:
 - **Original Stream** — your webcam feed or video file
 - **Event-Based (DVS) Spikes** — green pixels = brightness increased, red = decreased
-- **SNN Membrane Potential** — how much "charge" each neuron has built up
+- **SNN Feature Maps (8 Edge Detectors)** — a 2×4 tiled grid showing each of the 8 conv kernels responding to motion in the scene
 
 Press **`q`** to quit.
 
