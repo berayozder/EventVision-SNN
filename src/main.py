@@ -3,6 +3,7 @@ import argparse
 from generator import EventGenerator
 from processor import SNNProcessor
 from utils import visualize_events, visualize_feature_maps
+from stdp import STDPLearner
 
 
 def main():
@@ -30,6 +31,10 @@ def main():
     # Higher beta = longer memory of motion
     processor = SNNProcessor(beta=0.8, threshold=1.0)
 
+    # STDP learner — updates Conv2D kernels online based on spike correlations
+    # A_plus / A_minus control potentiation vs depression rates
+    stdp = STDPLearner(processor.conv, tau=0.9, A_plus=0.005, A_minus=0.005)
+
     source_label = args.source if args.source else "webcam"
     print(f"DVS Simulation starting on '{source_label}'... Press 'q' to quit.")
 
@@ -42,6 +47,7 @@ def main():
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     generator = EventGenerator(threshold=0.1)  # reset reference frame
                     processor.reset()
+                    stdp.reset()
                     continue
                 break
 
@@ -63,6 +69,14 @@ def main():
             cv2.imshow('Original Stream', frame)
             cv2.imshow('Event-Based (DVS) Spikes', event_vis)
             cv2.imshow('SNN Feature Maps (8 Edge Detectors)', feat_vis)
+
+            # 5. STDP weight update — kernels learn from spike correlations
+            stdp.update(event_tensor, spk)
+
+            # Log weight norm every 30 frames so we can see learning happening
+            frame_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+            if frame_idx % 30 == 0:
+                print(f"[Frame {frame_idx:5d}] Weight norm: {stdp.weight_norm():.4f}")
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
