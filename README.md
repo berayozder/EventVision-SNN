@@ -30,6 +30,8 @@ Instead of capturing full frames at a fixed frame rate (like a regular camera), 
 
 **STDP (Spike-Timing Dependent Plasticity)** — The brain's learning rule: if neuron A fires just before neuron B, their connection gets stronger. If B fires before A, the connection weakens. In short: *neurons that fire together, wire together.*
 
+**Spike Sparsity** — At any given moment, only ~1–5% of neurons fire. This is the core energy efficiency argument for neuromorphic computing: hardware like Intel Loihi only consumes power for neurons that actually fire, so 99% sparsity means ~99% less work than a conventional dense neural network.
+
 ---
 
 ## SNN Architecture — V1 Cortex Model
@@ -103,9 +105,16 @@ python src/main.py --source data/test_vid1.mp4
 ```
 
 Three windows will open:
-- **Original Stream** — your webcam feed or video file
+- **Original Stream** — your webcam feed or video file, with a live **Sparsity %** overlay in green
 - **Event-Based (DVS) Spikes** — green pixels = brightness increased, red = decreased
 - **SNN Feature Maps (8 Edge Detectors)** — a 2×4 tiled grid showing each of the 8 conv kernels responding to motion in the scene
+
+The console also prints every 30 frames:
+```
+[Frame    30] Weight norm: 1.2140 | Sparsity: 97.4%
+```
+- **Weight norm** rising = STDP is actively updating the kernels
+- **Sparsity ~95–99%** = biologically realistic and energy-efficient firing rate
 
 Press **`q`** to quit.
 
