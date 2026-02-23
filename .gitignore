@@ -13,10 +13,13 @@ venv/
 env/
 
 # Data / outputs (typically large or generated)
-data/
+data/NMNIST/
+data/MNIST/
+data/*.pt
+data/*.png
+data/*.npy
 *.avi
 *.mp4
-*.npy
 
 # macOS
 .DS_Store

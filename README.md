@@ -4,7 +4,17 @@ A project that makes a normal webcam behave like a **Dynamic Vision Sensor (DVS)
 
 Instead of capturing full frames at a fixed frame rate (like a regular camera), a DVS only records **which pixels changed** and **in which direction** (brighter or darker). This makes it much faster and more data-efficient.
 
-![Demo — DVS emulator running on a video file](demo.gif)
+---
+
+## This project has two modes
+
+**Mode 1 — Real-time DVS demo** (`src/main.py`)
+Plugs into your webcam or any video file and runs the full pipeline live. You see three windows: the original stream, the detected events, and the SNN feature maps. No dataset needed.
+
+**Mode 2 — N-MNIST classification experiment** (`scripts/run_nmnist.py`)
+Uses the **N-MNIST** dataset — the standard MNIST handwritten digit dataset re-recorded with a real DVS camera. Trains the SNN with STDP (no labels) and then measures classification accuracy. This is the scientific benchmark part of the project.
+
+> The classic MNIST files in `data/MNIST/raw/` (Kaggle download) are stored for reference and data verification (`scripts/verify_mnist.py`). The SNN currently trains on N-MNIST, not the static MNIST images.
 
 ---
 
@@ -72,15 +82,19 @@ STDP Update                      ← adjusts the Conv2D weights after every fram
 ```
 EventVision-SNN/
 ├── src/
-│   ├── generator.py   # Converts webcam frames into ON/OFF spike maps (log-luminance)
+│   ├── main.py        # Mode 1 entry point — webcam / video DVS emulator
+│   ├── generator.py   # Converts video frames into ON/OFF spike maps (log-luminance)
 │   ├── processor.py   # Conv2D + LIF layer — detects edges and fires feature spikes
 │   ├── stdp.py        # STDPLearner — updates Conv2D weights from spike correlations
-│   ├── utils.py       # Helpers: spike visualization & feature map tiling
-│   └── main.py        # Entry point — ties everything together
-├── tests/
-│   ├── test_pipeline.py  # Automated tests for the DVS + SNN pipeline
-│   └── test_stdp.py      # Automated tests for the STDP learning rule
-├── data/              # Put video files here (ignored by git)
+│   ├── dataset.py     # Mode 2 data loader — N-MNIST event stream → time-binned frames
+│   └── utils.py       # Helpers: spike visualization & feature map tiling
+├── scripts/
+│   ├── run_nmnist.py   # Mode 2 entry point — N-MNIST STDP training + WTA evaluation
+│   └── verify_mnist.py # Utility — verify the Kaggle MNIST IDX files are valid
+├── tests/             # Automated tests for all modules
+├── data/
+│   ├── MNIST/raw/     # Kaggle MNIST IDX files (git-ignored)
+│   └── test_vid1.mp4  # Demo video for Mode 1
 └── requirements.txt
 ```
 
@@ -99,12 +113,12 @@ pip install -r requirements.txt
 
 ---
 
-## Run
+## Run — Mode 1: Real-time DVS Demo
 
 ```bash
-# Activate your virtual environment first, then:
+# Webcam:
 python src/main.py
-# or with a video file:
+# Video file:
 python src/main.py --source data/test_vid1.mp4
 ```
 
@@ -121,6 +135,19 @@ The console also prints every 30 frames:
 - **Sparsity ~95–99%** = biologically realistic and energy-efficient firing rate
 
 Press **`q`** to quit.
+
+---
+
+## Run — Mode 2: N-MNIST Classification
+
+N-MNIST is downloaded automatically on first run (~180 MB via the `tonic` library).
+
+```bash
+python scripts/run_nmnist.py --n_train 1000   # quick test
+python scripts/run_nmnist.py                  # full run (5000 train / 1000 test)
+```
+
+This trains the SNN with STDP on N-MNIST event streams and then evaluates digit classification accuracy using a Winner-Take-All readout (no backprop, fully unsupervised).
 
 ---
 
