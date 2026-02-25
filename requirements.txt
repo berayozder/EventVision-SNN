@@ -3,4 +3,4 @@ numpy
 torch
 snntorch
 matplotlib
-tonic
+pytest
