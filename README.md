@@ -1,79 +1,75 @@
 # EventVision-SNN
 
-A project that makes a normal webcam behave like a **Dynamic Vision Sensor (DVS)** — a type of smart camera used in robotics and neuromorphic computing.
+A project that makes a **normal webcam behave like a Dynamic Vision Sensor (DVS)** — a special camera used in robotics and neuromorphic computing.
 
-Instead of capturing full frames at a fixed frame rate (like a regular camera), a DVS only records **which pixels changed** and **in which direction** (brighter or darker). This makes it much faster and more data-efficient.
+A regular camera records a full picture every frame , even if nothing moves. A DVS is smarter: it only records **which pixels changed** and **whether they got brighter or darker**. This makes it much faster, uses less data, and only "wakes up" when something actually happens — similar to how your eye works.
 
----
-
-## This project has two modes
-
-**Mode 1 — Real-time DVS demo** (`src/main.py`)
-Plugs into your webcam or any video file and runs the full pipeline live. You see three windows: the original stream, the detected events, and the SNN feature maps. No dataset needed.
-
-**Mode 2 — N-MNIST classification experiment** (`scripts/run_nmnist.py`)
-Uses the **N-MNIST** dataset — the standard MNIST handwritten digit dataset re-recorded with a real DVS camera. Trains the SNN with STDP (no labels) and then measures classification accuracy. This is the scientific benchmark part of the project.
-
-> The classic MNIST files in `data/MNIST/raw/` (Kaggle download) are stored for reference and data verification (`scripts/verify_mnist.py`). The SNN currently trains on N-MNIST, not the static MNIST images.
+This project **simulates** that behavior in software and then passes the detected changes through a small **Spiking Neural Network (SNN)** that learns to recognize edges and shapes on its own, without any labels.
 
 ---
 
-## What Does This Project Do?
+## Two Modes
 
-1. **Reads frames** from your webcam (or a video file)
-2. **Detects pixel changes** between frames using **log-luminance** — the physically correct way a real DVS camera works
-3. **Passes those events** through a Convolutional Spiking Neural Network — first a Conv2D layer finds edges and shapes, then LIF neurons decide if they're strong enough to "fire"
-4. **Updates its own kernels** in real-time using **STDP** — a biologically-inspired learning rule
-5. **Shows you** three live windows: the original feed, the detected events, and the 8 feature maps from the convolutional layer
+### Mode 1 — Real-time DVS demo (`src/main.py`)
 
----
+Plug in your webcam (or point it at a video file) and watch the simulation run live. Three windows open side-by-side: the original camera feed, the detected "events" (pixel changes shown in color), and 8 feature maps showing what the SNN is currently detecting. No dataset needed.
 
-## Core Ideas
+### Mode 2 — N-MNIST digit classification (`scripts/run_nmnist.py`)
 
-**Threshold** — A sensitivity knob. Only changes bigger than this value trigger an event. Lower = more sensitive but noisier.
-
-**ON / OFF Events** — Think of them as pixels raising their hand when something moves. Green = got brighter, Red = got darker.
-
-**Leaky Integrate-and-Fire (LIF) Neuron** — Each pixel has a "charge bucket" that fills up when events arrive and slowly drains over time. When it overflows, the neuron "fires". It's the simplest model of a biological neuron.
-
-**Log-Luminance** — Real DVS cameras don't measure raw brightness, they measure *changes in log-brightness*. This is how the eye works too — you notice when a light gets 2× brighter, not when it gets 10 units brighter. Mathematically: `ΔL = log(I_t) - log(I_{t-1})`.
-
-**STDP (Spike-Timing Dependent Plasticity)** — The brain's learning rule: if neuron A fires just before neuron B, their connection gets stronger. If B fires before A, the connection weakens. In short: *neurons that fire together, wire together.*
-
-**Spike Sparsity** — At any given moment, only ~1–5% of neurons fire. This is the core energy efficiency argument for neuromorphic computing: hardware like Intel Loihi only consumes power for neurons that actually fire, so 99% sparsity means ~99% less work than a conventional dense neural network.
-
-**Gabor Filter** — A tiny image patch that looks like a striped pattern (think a small piece of barcode) at a specific angle. It's the standard mathematical model of how V1 simple cells in your brain detect edges. Instead of starting with random conv kernels, we initialise all 8 with Gabor filters at different orientations (0°, 22.5°, 45° ... 157.5°) so the network is immediately useful from the very first frame.
+Uses the **N-MNIST** dataset — the classic handwritten-digits dataset (MNIST) re-recorded with a real DVS camera. The SNN trains on this data using STDP (no labels at all), then its accuracy is measured with a simple Winner-Take-All readout.
 
 ---
 
-## SNN Architecture — V1 Cortex Model
+## What Happens Step-by-Step (Mode 1)
 
-The network is inspired by the **V1 visual cortex** — the first layer of the brain that processes raw visual input into edges and shapes.
+1. **Read a frame** from your webcam or video file.
+2. **Detect pixel changes** by comparing the log-brightness of the current frame with the previous one. Pixels that changed more than a threshold become ON events (got brighter) or OFF events (got darker).
+3. **Pass the events** through a Conv2D layer with 8 small 3×3 kernels that each look for a different edge orientation (horizontal, vertical, diagonal, etc.).
+4. **Fire LIF neurons** — each neuron has a "charge bucket" that fills up when edges are detected and slowly leaks away. When it overflows, the neuron fires.
+5. **Update the kernels** using STDP after every frame. Kernels that responded to the same events at the same time get stronger. No teacher, no labels.
+6. **Show three windows** and print a summary every 30 frames.
 
 ```
-Input Spikes [B, 2, H, W]        ← 2 channels: ON and OFF
-    │
-    ▼
-Conv2D  (8 kernels, 3×3)         ← 8 different edge detectors scanning the spike map
-    │                               (horizontal lines, vertical lines, diagonals, etc.)
-    ▼
-LIF Neurons  (one per feature pixel) ← fires when a detected edge is strong enough
-    │
-    ▼
-Output Feature Maps [B, 8, H, W] ← 8 maps showing WHERE each type of edge is active
-    │
-    ▼
-STDP Update                      ← adjusts the Conv2D weights after every frame
-                                   neurons that responded together get a stronger link
+[Frame    30] Weight norm: 1.2140 | Sparsity: 97.4%
 ```
 
-**Why Conv2D?** The old version just tracked per-pixel brightness changes. With convolution, the network checks small *patches* of pixels together — it can recognise that several spiking pixels form a line or corner, not just isolated noise.
+---
 
-**Why Gabor init?** Random kernel weights detect nothing meaningful at the start. Gabor filters give each of the 8 kernels a specific job from frame 1 (e.g. kernel 0 = horizontal edges, kernel 2 = vertical edges). STDP then fine-tunes them based on what actually appears in the video.
+## Key Concepts
 
-**Why STDP?** The Conv kernels start as Gabor filters. With STDP, they gradually tune themselves to the patterns that appear most often in the video — no labels, no training loop, just natural Hebbian learning. You can watch this happening: the console prints a weight norm every 30 frames that slowly changes as the kernels self-organise.
+| Term | What it means |
+|---|---|
+| **DVS / Event camera** | A camera that only reports *changes* in brightness, not full frames |
+| **ON / OFF event** | A pixel "raising its hand" — green = got brighter, red = got darker |
+| **Log-luminance** | Brightness measured on a log scale. `ΔL = log(I_t) − log(I_{t−1})`. Matches how real DVS cameras and human eyes work — doubling the brightness always triggers the same size event |
+| **LIF Neuron** | Leaky Integrate-and-Fire. Think of a bucket with a tiny hole: input fills it, the leak drains it, and when it overflows the neuron fires and resets |
+| **STDP** | Spike-Timing Dependent Plasticity. The brain's learning rule: if one neuron fires just before another, their connection strengthens. No backprop needed |
+| **Gabor filter** | A small striped patch pattern. It's the mathematical model of how the primary visual cortex (V1) detects oriented edges. The 8 kernels are initialized as Gabor filters so the network is useful from the very first frame |
+| **Spike sparsity** | At any moment only ~1–5% of neurons fire. This is the key energy argument for neuromorphic hardware: if 99% of neurons are silent, 99% of the work is skipped |
+| **Winner-Take-All (WTA)** | A simple readout rule: whichever output neuron fires most "wins" and its assigned class is the prediction |
 
-**Why Log-Luminance?** Real DVS cameras fire based on *proportional* brightness changes, not absolute ones. `log(I_t) - log(I_{t-1})` captures this correctly — a candle in a dark room and a floodlight in daylight both trigger the same size event if they double in brightness.
+---
+
+## SNN Architecture
+
+The network is a one-layer **V1-cortex-inspired** pipeline:
+
+```
+Input Events [1, 2, H, W]         ← batch=1, 2 channels: ON and OFF
+      │
+      ▼
+Conv2D  (8 kernels, 3×3)           ← scans the event map for edges
+      │   initialized as Gabor filters (8 orientations, 0° → 157.5°)
+      ▼
+LIF Neurons  (one per pixel)       ← fires when a detected edge is strong enough
+      │   beta=0.8 (membrane decay), threshold=1.0
+      ▼
+Output Spikes [1, 8, H, W]         ← 8 maps showing WHERE each edge type is active
+      │
+      ▼
+STDP Update                        ← adjusts Conv2D weights using synaptic traces
+                                     no labels, no gradients, fully online
+```
 
 ---
 
@@ -82,20 +78,23 @@ STDP Update                      ← adjusts the Conv2D weights after every fram
 ```
 EventVision-SNN/
 ├── src/
-│   ├── main.py        # Mode 1 entry point — webcam / video DVS emulator
-│   ├── generator.py   # Converts video frames into ON/OFF spike maps (log-luminance)
-│   ├── processor.py   # Conv2D + LIF layer — detects edges and fires feature spikes
-│   ├── stdp.py        # STDPLearner — updates Conv2D weights from spike correlations
-│   ├── dataset.py     # Mode 2 data loader — N-MNIST event stream → time-binned frames
-│   └── utils.py       # Helpers: spike visualization & feature map tiling
+│   ├── main.py         Mode 1 entry point — webcam / video DVS emulator + live display
+│   ├── generator.py    EventGenerator — converts video frames into ON/OFF spike maps
+│   ├── processor.py    SNNProcessor — Conv2D + Gabor init + LIF neurons
+│   ├── stdp.py         STDPLearner — updates Conv2D weights using synaptic traces
+│   ├── dataset.py      N-MNIST loader — event streams → time-binned spike frames
+│   ├── utils.py        visualize_events() and visualize_feature_maps() helpers
+│   └── __init__.py
 ├── scripts/
-│   ├── run_nmnist.py   # Mode 2 entry point — N-MNIST STDP training + WTA evaluation
-│   └── verify_mnist.py # Utility — verify the Kaggle MNIST IDX files are valid
-├── tests/             # Automated tests for all modules
+│   ├── run_nmnist.py   Mode 2 entry point — STDP training + WTA classification
+│   └── verify_mnist.py Utility — checks that the Kaggle MNIST IDX files are valid
+├── tests/
+│   ├── test_pipeline.py   Integration tests for the full DVS → SNN pipeline
+│   ├── test_stdp.py       Unit tests for the STDP weight update rule
+│   └── test_dataset.py    Unit tests for the N-MNIST data loader
 ├── data/
-│   ├── MNIST/raw/     # Kaggle MNIST IDX files (git-ignored)
-│   └── test_vid1.mp4  # Demo video for Mode 1
-└── requirements.txt
+├── requirements.txt
+└── .gitignore
 ```
 
 ---
@@ -103,51 +102,80 @@ EventVision-SNN/
 ## Setup
 
 ```bash
-# Clone the repo and create a virtual environment
+# 1. Create and activate a virtual environment
 python -m venv .venv
-source .venv/bin/activate      # On Windows: .venv\Scripts\activate
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 
-# Install dependencies
+# 2. Install dependencies
 pip install -r requirements.txt
 ```
 
+**Dependencies** (`requirements.txt`): `opencv-python`, `numpy`, `torch`, `snntorch`, `matplotlib`, `tonic`
+
 ---
 
-## Run — Mode 1: Real-time DVS Demo
+## Run Mode 1 — Real-time DVS Demo
 
 ```bash
-# Webcam:
+# From your webcam:
 python src/main.py
-# Video file:
+
+# From a video file:
 python src/main.py --source data/test_vid1.mp4
 ```
 
-Three windows will open:
-- **Original Stream** — your webcam feed or video file, with a live **Sparsity %** overlay in green
-- **Event-Based (DVS) Spikes** — green pixels = brightness increased, red = decreased
-- **SNN Feature Maps (8 Edge Detectors)** — a 2×4 tiled grid showing each of the 8 conv kernels responding to motion in the scene
+Three windows open:
+- **Original Stream** — camera feed with a live **Sparsity %** overlay
+- **Event-Based (DVS) Spikes** — green = ON events, red = OFF events
+- **SNN Feature Maps (8 Edge Detectors)** — 2×4 grid of the 8 conv kernel responses
 
-The console also prints every 30 frames:
+The console prints a status line every 30 frames:
 ```
 [Frame    30] Weight norm: 1.2140 | Sparsity: 97.4%
 ```
-- **Weight norm** rising = STDP is actively updating the kernels
-- **Sparsity ~95–99%** = biologically realistic and energy-efficient firing rate
+- **Weight norm rising** → STDP is actively learning
+- **Sparsity ~95–99%** → biologically realistic and energy-efficient
 
-Press **`q`** to quit.
+Press **`q`** to quit. If a video file ends, the demo loops automatically.
 
 ---
 
-## Run — Mode 2: N-MNIST Classification
+## Run Mode 2 — N-MNIST Classification
 
-N-MNIST is downloaded automatically on first run (~180 MB via the `tonic` library).
+N-MNIST (~180 MB) is downloaded automatically on the first run via the `tonic` library.
 
 ```bash
-python scripts/run_nmnist.py --n_train 1000   # quick test
-python scripts/run_nmnist.py                  # full run (5000 train / 1000 test)
+# Quick test (1000 training samples):
+python scripts/run_nmnist.py --n_train 1000
+
+# Full run (5000 train / 1000 test):
+python scripts/run_nmnist.py
+
+# Train only (saves weights to data/trained_weights.pt):
+python scripts/run_nmnist.py --mode train
+
+# Evaluate only (loads saved weights):
+python scripts/run_nmnist.py --mode eval
 ```
 
-This trains the SNN with STDP on N-MNIST event streams and then evaluates digit classification accuracy using a Winner-Take-All readout (no backprop, fully unsupervised).
+**What happens:**
+1. **Phase 1 — STDP Training**: Each digit sample is fed frame-by-frame through the SNN. STDP updates the Conv2D kernels online. No labels used.
+2. **Phase 2 — WTA Evaluation**: Each output neuron is assigned to its most-responsive class. Test samples are classified by whichever neuron fires most. Overall accuracy and per-class breakdown are printed.
+
+Sample output:
+```
+  Class    Correct    Total      Acc
+  ------------------------------------
+  0            87      100    87.0%
+  1            91      100    91.0%
+  ...
+  ====================================
+  Overall WTA Accuracy: 65.3%  (chance = 10%)
+```
+
+> Chance level is 10% (10 classes). A score well above that confirms the STDP kernels learned meaningful features without any supervision.
+
+After training finishes, a **kernel evolution plot** is automatically saved to `data/kernel_evolution.png` and displayed on screen. It shows all 8 Conv2D kernels in two rows — **before** (Gabor filters) and **after** (STDP-tuned) — using a diverging colormap so you can see exactly how each kernel morphed to fit the curves of handwritten digits.
 
 ---
 
@@ -156,3 +184,8 @@ This trains the SNN with STDP on N-MNIST event streams and then evaluates digit 
 ```bash
 python -m pytest tests/ -v
 ```
+
+Three test files cover:
+- `test_pipeline.py` — end-to-end: frame → events → SNN spikes → STDP update
+- `test_stdp.py` — STDP weight update math (LTP, LTD, clamping, traces)
+- `test_dataset.py` — N-MNIST loader output shapes and dtypes

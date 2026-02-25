@@ -26,6 +26,8 @@ import os
 import argparse
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 
 # Allow imports from src/
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -34,8 +36,62 @@ from dataset import get_nmnist_loader
 from processor import SNNProcessor
 from stdp import STDPLearner
 
-WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "trained_weights.pt")
+WEIGHTS_PATH  = os.path.join(os.path.dirname(__file__), "..", "data", "trained_weights.pt")
+PLOT_PATH     = os.path.join(os.path.dirname(__file__), "..", "data", "kernel_evolution.png")
 N_CLASSES = 10
+
+
+# ---------------------------------------------------------------------------
+# Kernel visualisation
+# ---------------------------------------------------------------------------
+
+def plot_kernels(before: np.ndarray, after: np.ndarray, save_path: str = PLOT_PATH):
+    """
+    Plot the 8 Conv2D kernels before and after STDP training side-by-side.
+
+    :param before: numpy array of shape [8, kH, kW] — weights before training
+    :param after:  numpy array of shape [8, kH, kW] — weights after training
+    :param save_path: file path to save the figure (PNG)
+    """
+    num_kernels = before.shape[0]
+
+    fig = plt.figure(figsize=(num_kernels * 1.6, 4.2))
+    fig.suptitle(
+        "Conv2D Kernels: Gabor Init  →  After STDP Training on N-MNIST",
+        fontsize=13, fontweight="bold", y=1.01,
+    )
+
+    gs = gridspec.GridSpec(
+        2, num_kernels,
+        figure=fig,
+        hspace=0.08,
+        wspace=0.08,
+    )
+
+    row_labels = ["Before (Gabor)", "After (STDP)"]
+    rows       = [before, after]
+
+    for row_idx, (label, kernels) in enumerate(zip(row_labels, rows)):
+        for col_idx in range(num_kernels):
+            ax = fig.add_subplot(gs[row_idx, col_idx])
+            k  = kernels[col_idx]          # [kH, kW]
+
+            # Diverging colormap: negative weights = purple, positive = yellow
+            vmax = np.abs(k).max() + 1e-8
+            ax.imshow(k, cmap="PiYG", vmin=-vmax, vmax=vmax, interpolation="nearest")
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+            if col_idx == 0:
+                ax.set_ylabel(label, fontsize=9, labelpad=6)
+            if row_idx == 0:
+                angle = col_idx * 180 // num_kernels
+                ax.set_title(f"{angle}°", fontsize=8)
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches="tight")
+    print(f"  📊 Kernel plot saved → {save_path}")
+    plt.show()
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +105,10 @@ def train(args):
 
     processor = SNNProcessor(beta=args.beta, threshold=args.threshold)
     stdp      = STDPLearner(processor.conv, tau=0.9, A_plus=0.005, A_minus=0.005)
+
+    # Snapshot the Gabor-initialized kernels *before* any learning happens.
+    # We average the two input channels (ON + OFF) for a clean 2-D view.
+    gabor_weights = processor.conv.weight.data.mean(dim=1).cpu().numpy()  # [8, kH, kW]
     loader    = get_nmnist_loader(
         train=True, n_time_bins=args.n_time_bins,
         n_samples=args.n_train, data_root=args.data_root,
@@ -74,6 +134,10 @@ def train(args):
     torch.save(processor.conv.weight.data, WEIGHTS_PATH)
     print(f"\n  ✅ Weights saved → {WEIGHTS_PATH}")
     print(f"  Final weight norm: {stdp.weight_norm():.4f}")
+
+    # Snapshot trained kernels and plot before vs after
+    trained_weights = processor.conv.weight.data.mean(dim=1).cpu().numpy()  # [8, kH, kW]
+    plot_kernels(gabor_weights, trained_weights)
 
 
 # ---------------------------------------------------------------------------
